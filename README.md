@@ -1,5 +1,9 @@
 # mcdcbot
+
 Discord bot for your minecraft server (start/stop/switch configs/chat sync)
+
+This is intended for small friendgroups. When using this bot, make sure you trust
+everyone who can access the bot's text channels!
 
 ## Running
 
