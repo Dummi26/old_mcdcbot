@@ -1,11 +1,11 @@
 survival-omi Survival bei der Omi
-type=vanilla-mojang
+type=vanilla-papermc
 dir=/run/media/mark/mcsrv/minecraft_server/survival server bei der omi
 exec=paper-1.19-81.jar
 ram=2048
 
 survival-cherry Survival with cherries
-type=vanilla-papermc
+type=vanilla-mojang
 dir=/run/media/mark/mcsrv/minecraft_server/survival_cherry
 exec=server.jar
 ram=2048
