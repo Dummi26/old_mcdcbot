@@ -1,9 +1,13 @@
 use std::{
+    fmt::Display,
     io::{BufRead, BufReader, Write},
     process::{ExitStatus, Stdio},
 };
 
-use crate::parse_line::{parse_line, ParseOutput};
+use crate::{
+    parse_line::{parse_line, ParseOutput},
+    MinecraftServerType,
+};
 
 use {
     crate::tasks::MinecraftServerTask,
@@ -32,6 +36,7 @@ pub fn run(
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        eprintln!("Spawning {command:?}");
         match command.spawn() {
             Ok(mut process) => {
                 if let (Some(mut stdin), Some(stdout), Some(mut _stderr)) = (
@@ -132,10 +137,18 @@ pub fn run(
                         match process.try_wait() {
                             Ok(None) => (),
                             Ok(Some(exit_status)) => {
+                                if let MinecraftServerType::Custom {
+                                    line_parser_proc, ..
+                                } = &settings.server_type
+                                {
+                                    if let Some(proc) = &mut *line_parser_proc.lock().unwrap() {
+                                        _ = proc.0.kill();
+                                    }
+                                }
                                 return MinecraftServerStopReason {
                                     time: (),
                                     reason: MinecraftServerStopReasons::ProcessEnded(exit_status),
-                                }
+                                };
                             }
                             Err(e) => {
                                 return MinecraftServerStopReason {
@@ -166,26 +179,47 @@ pub fn run(
                     }
                 }
             }
-            Err(e) => MinecraftServerStopReason {
-                time: (),
-                reason: MinecraftServerStopReasons::ProcessCouldNotBeSpawned(e),
-            },
+            Err(e) => {
+                eprintln!("Couldn't spawn server process: {e:?}");
+                MinecraftServerStopReason {
+                    time: (),
+                    reason: MinecraftServerStopReasons::ProcessCouldNotBeSpawned(e),
+                }
+            }
         }
     });
     // return the mpsc channel parts
     (return_task_sender, return_events_receiver, join_handle)
 }
 
-#[derive(Debug)]
 pub struct MinecraftServerStopReason {
     time: (),
     reason: MinecraftServerStopReasons,
 }
+impl Display for MinecraftServerStopReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.reason)
+    }
+}
 
-#[derive(Debug)]
 pub enum MinecraftServerStopReasons {
     KilledDueToTask,
     ProcessEnded(ExitStatus),
     ProcessCouldNotBeSpawned(std::io::Error),
     ProcessCouldNotBeAwaited(std::io::Error),
+}
+impl Display for MinecraftServerStopReasons {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::KilledDueToTask => write!(f, "killed (due to task)"),
+            Self::ProcessEnded(exit_status) => write!(f, "Exited ({:?})", exit_status.code()),
+            Self::ProcessCouldNotBeSpawned(e) => {
+                write!(f, "Couldn't spawn process (check your paths!)")
+            }
+            Self::ProcessCouldNotBeAwaited(e) => write!(
+                f,
+                "Couldn't wait for process to end (check console/log for errors)"
+            ),
+        }
+    }
 }

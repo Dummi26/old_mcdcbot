@@ -28,6 +28,7 @@ For each server, add this to your config file:
   + `type` is the kind of server you are running. this is required because mcdcbot works by reading the server's stdout, which isn't the same for all servers.
     * `vanilla-mojang` for normal servers.
     * `vanilla-papermc` if using papermc.
+    * or `custom`
   + `dir` is the working directory for your jar file (shouldn't end with a `/`!)
   + `exec` is the name of your jar file
   + `ram` (default: 1024) is the amount of ram your server should use in MiB (-Xms<ram>M and -Xmx<ram>M)
@@ -77,3 +78,45 @@ Available commands are: (this isn't using slash commands right now)
 If a player on the server sends a message, the bot will forward it to the **chat channel**.
 
 If a user sends a message to the **chat channel**, the bot will forward it to the server's chat using /tellraw (NOTE: this may be exploitable!)
+
+## Custom Server Type
+
+After `type=custom`,
+add indented lines to configure
+
+- name: the name of the custom server type
+- parser: the path to an executable file which will handle parsing the server's stdout
+- (optional) command-override: a command to be used instead of the default `java`
+
+Example config:
+
+    custom-test custom test server
+    type=custom
+      name=debug-to-chat
+      parser=/tmp/server/parser.mers
+    dir=/tmp/server
+    exec=server.jar
+    ram=1024
+
+The `parser=` executable file will be started with the server.
+Every time a line is read from the server, it will be sent to its stdin.
+Your program is then expected to reply with:
+
+- an empty line for no event
+- `j<username>` for join events
+- `l<username>` for leave events
+- `c<username>`, then `<message>` (2 lines) for chat messages
+
+All lines must be terminated by a newline character.
+
+For our example, the implementation is simply:
+
+    #!/usr/bin/env mers
+    loop {
+        line := read_line()
+        println("cserver log")
+        println(line)
+    }
+
+Now just `chmod +x` the script and you're ready to go!
+This will take the output from the server and send it to the chat channel as if it were player messages sent by a player named 'server log'.

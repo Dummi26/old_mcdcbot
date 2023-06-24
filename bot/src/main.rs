@@ -1,5 +1,6 @@
 use minecraft_manager::events::MinecraftServerEventType;
 use minecraft_manager::{self, tasks::MinecraftServerTask, MinecraftServerSettings};
+use serenity::utils::Colour;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -257,6 +258,7 @@ impl Handler {
                     };
                 let ip_mutex = self.my_ip.clone();
                 let chat_channel_id = self.chat_channel_id;
+                let status_channel_id = self.status_channel_id;
                 tokio::spawn(async move {
                     // create minecraft server config
                     // let minecraft_server_settings = MinecraftServerSettings {
@@ -283,6 +285,19 @@ impl Handler {
                                 match &event.event {
                                     MinecraftServerEventType::Warning(w) => {
                                         eprintln!("Warning: {w:?}");
+                                        if let Err(e) = ChannelId(status_channel_id)
+                                            .send_message(&ctx.http, |m| {
+                                                m.embed(|e| {
+                                                    e.colour(Colour::from_rgb(200, 70, 00))
+                                                        .description(format!(
+                                                            "Warning from server: {w:?}"
+                                                        ))
+                                                })
+                                            })
+                                            .await
+                                        {
+                                            eprintln!("Couldn't send message: {e:?}");
+                                        }
                                     }
                                     MinecraftServerEventType::JoinLeave(ev) => {
                                         if ev.joined {
@@ -373,7 +388,7 @@ impl Handler {
                                     }
                                     _ = msg
                                         .edit(&ctx, |m| {
-                                            m.content("Minecraft Server Info").embed(|e| {
+                                            m.embed(|e| {
                                                 e.title(format!(
                                                     "{} ({})",
                                                     display_name,
@@ -386,16 +401,43 @@ impl Handler {
                                         .await;
                                 }
                             }
-                            std::thread::sleep(std::time::Duration::from_millis(2000));
+                            std::thread::sleep(std::time::Duration::from_millis(1000));
                         } else {
-                            if let Ok(stop_reason) = thread.get_stop_reason() {
-                                eprintln!("Thread stopped: {stop_reason:?}");
-                            } else {
-                                eprintln!("Thread stopped, but no reason could be found.");
-                            }
-                            arc_is_running.swap(false, Ordering::Relaxed);
                             // SERVER CLOSED
+                            let stop_reason = thread.get_stop_reason();
+                            if let Ok(r) = &stop_reason {
+                                eprintln!("Thread stopped: {r}");
+                            } else {
+                                eprintln!("Thread stopped; reason unknown");
+                            }
+                            if let Err(e) = ChannelId(status_channel_id)
+                                .send_message(&ctx.http, |m| {
+                                    m.embed(|e| {
+                                        e.colour(Colour::from_rgb(160, 0, 255))
+                                            .title("server stopped")
+                                            .description(if let Ok(r) = stop_reason {
+                                                format!("{r}")
+                                            } else {
+                                                "(no reason given)".to_owned()
+                                            })
+                                    })
+                                })
+                                .await
+                            {
+                                eprintln!("Couldn't send message: {e:?}");
+                            }
+                            if let Some(msg) = &mut status_message {
+                                _ = msg
+                                    .edit(&ctx.http, |m| {
+                                        m.embed(|e| {
+                                            e.colour(Colour::from_rgb(15, 0, 45))
+                                                .description(format!("{} (stopped)", display_name))
+                                        })
+                                    })
+                                    .await;
+                            }
                             ctx.idle().await;
+                            arc_is_running.swap(false, Ordering::Relaxed);
                             break;
                         }
                     }
@@ -535,7 +577,7 @@ async fn main() {
     eprintln!(" | chat   channel id: {chat_channel_id}");
     eprintln!(" | server configs:");
     for (id, (name, cfg)) in server_configs.iter() {
-        eprintln!(" | | {id} - \"{name}\" - {cfg:?}");
+        eprintln!(" | | {id} - \"{name}\" - {cfg}");
     }
     eprintln!(
         " | default config: {default_server_config}{}",
